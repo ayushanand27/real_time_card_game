@@ -1,0 +1,73 @@
+{
+  "game": {
+    "players": {
+      "min": 2,
+      "max": 4,
+      "timeoutSeconds": 30
+    },
+    "rounds": {
+      "cardsPerRound": 13,
+      "bidTimeSeconds": 30,
+      "playTimeSeconds": 20
+    }
+  },
+  "scoring": {
+    "normal": {
+      "base": 10,
+      "overTrickBonus": 5,
+      "underTrickPenalty": 10,
+      "exactBonus": 20
+    },
+    "nil": {
+      "success": 100,
+      "fail": -100
+    },
+    "blind": {
+      "minTricks": 4,
+      "base": 80,
+      "bonusPerTrick": 20,
+      "failPenalty": -100
+    }
+  },
+  "gameplay": {
+    "lastCard": {
+      "enabled": true,
+      "beatsAll": true
+    },
+    "trumpSuit": {
+      "enabled": false,
+      "rotating": false
+    },
+    "followSuit": {
+      "required": true,
+      "penaltyPoints": -10
+    }
+  },
+  "ui": {
+    "animations": {
+      "enabled": true,
+      "dealSpeed": 300,
+      "playSpeed": 500
+    },
+    "sound": {
+      "enabled": true,
+      "volume": 0.7,
+      "effects": {
+        "deal": "deal.mp3",
+        "play": "play.mp3",
+        "win": "win.mp3",
+        "lose": "lose.mp3"
+      }
+    }
+  },
+  "network": {
+    "reconnect": {
+      "maxAttempts": 3,
+      "delayMs": 5000
+    },
+    "sync": {
+      "intervalMs": 30000,
+      "timeoutMs": 5000
+    }
+  }
+}

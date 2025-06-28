@@ -1,0 +1,154 @@
+name: Production Deploy
+
+on:
+  push:
+    tags: ['v*.*.*']
+
+env:
+  NODE_VERSION: '18.x'
+  AZURE_WEBAPP_NAME: 'call-bray-prod'
+
+jobs:
+  test:
+    name: Test & Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Run Tests
+        run: |
+          npm run test:ci
+          npm run test:coverage
+        
+      - name: Performance Audit
+        run: node performance-audit.js
+        
+      - name: Security Audit
+        run: |
+          npm audit
+          npm run lint
+          
+  build:
+    name: Build & Package
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          
+      - name: Install Dependencies
+        run: npm ci
+        
+      - name: Build Application
+        run: npm run build
+        env:
+          NODE_ENV: production
+          
+      - name: Docker Build
+        run: |
+          docker build --pull -t call-bray-game:${{ github.ref_name }} .
+          docker save call-bray-game:${{ github.ref_name }} > image.tar
+          
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-image
+          path: image.tar
+          retention-days: 1
+
+  deploy:
+    name: Deploy to Production
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    
+    steps:
+      - name: Download Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-image
+          
+      - name: Load Docker Image
+        run: docker load < image.tar
+        
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          images: call-bray-game:${{ github.ref_name }}
+          
+      - name: Verify Deployment
+        run: |
+          # Wait for deployment to stabilize
+          sleep 30
+          
+          # Check app health
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/health)
+          if [ $response -ne 200 ]; then
+            echo "Health check failed with status $response"
+            exit 1
+          fi
+          
+          # Check WebSocket connectivity
+          node -e '
+            const WebSocket = require("ws");
+            const ws = new WebSocket("wss://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net");
+            ws.on("open", () => process.exit(0));
+            ws.on("error", () => process.exit(1));
+            setTimeout(() => process.exit(1), 5000);
+          '
+
+  notify:
+    name: Notify Team
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Slack Notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          
+      - name: Create Release
+        if: success()
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            Release Notes:
+            - Performance metrics passed
+            - Security audit passed
+            - Deployment verified
+            
+            For full changelog, see commit history. 
